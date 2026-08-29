@@ -1,6 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+// DEMO ISOLATION: same reasoning as DB_NAME below. localStorage is shared across
+// all paths on a domain, and this demo writes the same setting keys the paid app
+// uses. DS prefixes every key so the two can never collide.
+var DS = (function () {
+  var PREFIX = 'btDemo:';
+  function ok(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
+  return {
+    prefix: PREFIX,
+    getItem: function (k) { return ok(function () { return localStorage.getItem(PREFIX + k); }, null); },
+    setItem: function (k, v) { return ok(function () { localStorage.setItem(PREFIX + k, v); }); },
+    removeItem: function (k) { return ok(function () { localStorage.removeItem(PREFIX + k); }); },
+    clear: function () {
+      return ok(function () {
+        var doomed = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf(PREFIX) === 0) doomed.push(k);
+        }
+        doomed.forEach(function (k) { localStorage.removeItem(k); });
+      });
+    }
+  };
+})();
+</script>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Budget Tracker — Track spending, save smarter</title>
@@ -3574,7 +3600,12 @@ input:focus, select:focus, textarea:focus {
     { name: 'Other Income', color: '#9ca3af', icon: 'other-income', isDefault: true, order: 105, type: 'income' }
   ];
 
-  const DB_NAME = 'BudgetTrackerDB';
+  // DEMO ISOLATION: the demo and the paid Budget Tracker are served from the same
+  // domain (cleartrackapps.com), and IndexedDB is shared across every path on a
+  // domain. This demo deletes its whole database on each load so every visit starts
+  // fresh, so it MUST NOT use the paid app's database name or it destroys the real
+  // budgets of anyone who has used the hosted app on that phone.
+  const DB_NAME = 'BudgetTrackerDB_demo';
   const DB_VERSION = 3;
 
   // ============================================
@@ -3798,7 +3829,7 @@ input:focus, select:focus, textarea:focus {
   // DARK MODE
   // ============================================
   function initDarkMode() {
-    const saved = localStorage.getItem('bt-dark-mode');
+    const saved = DS.getItem('bt-dark-mode');
     if (saved === 'true') {
       document.documentElement.setAttribute('data-theme', 'dark');
       document.getElementById('dark-mode-toggle').classList.add('active');
@@ -3809,7 +3840,7 @@ input:focus, select:focus, textarea:focus {
     const toggle = document.getElementById('dark-mode-toggle');
     const isDark = toggle.classList.toggle('active');
     document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-    localStorage.setItem('bt-dark-mode', isDark);
+    DS.setItem('bt-dark-mode', isDark);
   }
 
   document.getElementById('dark-mode-toggle').addEventListener('click', toggleDarkMode);
@@ -6143,9 +6174,9 @@ input:focus, select:focus, textarea:focus {
   // SETTINGS
   // ============================================
   function loadSettings() {
-    const saved = localStorage.getItem('bt-currency-symbol');
+    const saved = DS.getItem('bt-currency-symbol');
     if (saved) currencySymbol = saved;
-    const savedDay = localStorage.getItem('bt-budget-start-day');
+    const savedDay = DS.getItem('bt-budget-start-day');
     if (savedDay) budgetStartDay = parseInt(savedDay, 10);
   }
 
@@ -6171,7 +6202,7 @@ input:focus, select:focus, textarea:focus {
   // Currency change handler
   document.getElementById('settings-currency').addEventListener('change', function() {
     currencySymbol = this.value;
-    localStorage.setItem('bt-currency-symbol', currencySymbol);
+    DS.setItem('bt-currency-symbol', currencySymbol);
     showToast('Currency updated to ' + currencySymbol);
     // Refresh current visible data if user switches back to another page
     if (currentPage === 'dashboard') refreshDashboard();
@@ -6180,7 +6211,7 @@ input:focus, select:focus, textarea:focus {
   // Start day change handler
   document.getElementById('settings-start-day').addEventListener('change', function() {
     budgetStartDay = parseInt(this.value, 10);
-    localStorage.setItem('bt-budget-start-day', budgetStartDay);
+    DS.setItem('bt-budget-start-day', budgetStartDay);
     showToast('Budget cycle starts on day ' + budgetStartDay);
   });
 
@@ -6227,9 +6258,9 @@ input:focus, select:focus, textarea:focus {
       }
       // Delete everything
       indexedDB.deleteDatabase(DB_NAME);
-      localStorage.removeItem('bt-currency-symbol');
-      localStorage.removeItem('bt-budget-start-day');
-      localStorage.removeItem('bt-dark-mode');
+      DS.removeItem('bt-currency-symbol');
+      DS.removeItem('bt-budget-start-day');
+      DS.removeItem('bt-dark-mode');
       overlay.remove();
       location.reload();
     });
@@ -6240,8 +6271,8 @@ input:focus, select:focus, textarea:focus {
   // ============================================
   async function init() {
     // ====== DEMO: Reset all data on every page load ======
-    localStorage.removeItem('bt-currency-symbol');
-    localStorage.removeItem('bt-budget-start-day');
+    DS.removeItem('bt-currency-symbol');
+    DS.removeItem('bt-budget-start-day');
     // Delete the entire IndexedDB so we start fresh
     await new Promise((resolve) => {
       const delReq = indexedDB.deleteDatabase(DB_NAME);
